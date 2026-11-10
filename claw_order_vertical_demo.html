@@ -1,0 +1,847 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Claw & Order - Turn Based</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Matter.js for 2D Physics -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
+    <!-- FontAwesome for Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts: Inter & Press Start 2P -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&family=Press+Start+2P&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #090d16; color: #f8fafc; }
+        .arcade-font { font-family: 'Press Start 2P', monospace; }
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+        .disabled-btn { opacity: 0.5; pointer-events: none; filter: grayscale(100%); }
+        
+        /* Custom Animations for Hero */
+        @keyframes idle-breathe {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-3px); }
+        }
+        @keyframes recoil-kick {
+            0% { transform: rotate(0deg) translateX(0) scale(1); }
+            20% { transform: rotate(-20deg) translateX(-12px) scale(1.05); }
+            100% { transform: rotate(0deg) translateX(0) scale(1); }
+        }
+        @keyframes enemy-recoil {
+            0% { transform: translateX(0) scale(1); }
+            20% { transform: translateX(-15px) rotate(-5deg) scale(1.05); }
+            100% { transform: translateX(0) rotate(0) scale(1); }
+        }
+        @keyframes explode-anim {
+            0% { transform: scale(0.5) rotate(-10deg); opacity: 1; }
+            40% { transform: scale(1.4) rotate(10deg); opacity: 1; filter: brightness(1.5); }
+            100% { transform: scale(1.8) rotate(0deg); opacity: 0; }
+        }
+        .animate-idle { animation: idle-breathe 2s ease-in-out infinite; }
+        .animate-recoil { animation: recoil-kick 0.35s ease-out forwards; transform-origin: bottom center; }
+        .animate-enemy-recoil { animation: enemy-recoil 0.4s ease-out forwards; transform-origin: bottom center; }
+        .animate-explosion { animation: explode-anim 0.5s ease-out forwards; }
+    </style>
+</head>
+<body class="min-h-screen flex items-center justify-center p-2 sm:p-4 select-none overflow-hidden">
+
+    <!-- Mobile Phone Frame Container -->
+    <div class="w-full max-w-sm h-[92vh] max-h-[840px] bg-slate-900 rounded-[2.5rem] border-4 border-slate-700 shadow-2xl flex flex-col justify-between overflow-hidden relative">
+
+        <!-- Status Bar -->
+        <div class="w-full bg-slate-950 py-2 px-6 flex justify-between items-center text-[10px] text-slate-400 border-b border-slate-800 z-30">
+            <span class="arcade-font text-[9px] text-cyan-400">CLAW & ORDER</span>
+            <div class="w-16 h-3 bg-slate-800 rounded-full mx-auto"></div>
+            <div class="flex items-center space-x-1">
+                <i class="fa-solid fa-wifi text-cyan-400"></i>
+                <i class="fa-solid fa-battery-three-quarters text-emerald-400"></i>
+            </div>
+        </div>
+
+        <!-- Notification Ticker -->
+        <div id="notification-box" class="bg-cyan-950/80 border-b border-cyan-500/30 text-cyan-200 px-3 py-1 text-[10px] flex items-center justify-between z-20 mt-2">
+            <span id="notification-text" class="truncate">Grab ammo and defeat the enemies!</span>
+            <button onclick="dismissNotification()" class="text-slate-400 hover:text-white ml-2"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+
+        <!-- MAIN GAMEPLAY AREA -->
+        <div class="flex-1 flex flex-col relative overflow-hidden bg-slate-950">
+
+            <!-- Intro / Demo Overlay -->
+            <div id="intro-screen" class="absolute inset-0 bg-slate-950/95 z-[60] flex flex-col items-center justify-center backdrop-blur-md px-4">
+                <h1 class="arcade-font text-cyan-400 text-xl mb-1 text-center drop-shadow-[0_0_10px_rgba(6,182,212,0.8)]">CLAW & ORDER</h1>
+                <p class="text-slate-300 text-[9px] mb-6 text-center tracking-wide">TURN-BASED ARCADE SHOOTER</p>
+
+                <!-- Demo / Guide Card -->
+                <div class="w-full bg-slate-900 border border-slate-700 rounded-2xl p-4 mb-6 relative shadow-2xl">
+                    <div class="absolute -top-3 left-1/2 -translate-x-1/2 bg-cyan-600 text-slate-950 font-bold text-[8px] px-3 py-1 rounded-full uppercase tracking-wider">
+                        How to Play / Demo
+                    </div>
+                    
+                    <div class="flex items-center gap-3 mb-3 text-[10px] text-slate-200">
+                        <i class="fa-solid fa-hand-holding-medical text-cyan-400 text-lg"></i>
+                        <p>1. Grab bullets from the machine below.</p>
+                    </div>
+                    <div class="flex items-center gap-3 mb-4 text-[10px] text-slate-200">
+                        <i class="fa-solid fa-person-rifle text-amber-400 text-lg"></i>
+                        <p>2. Hero automatically shoots the robots.</p>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-y-2 gap-x-1 text-[9px] text-slate-300 border-t border-slate-700 pt-3">
+                        <div class="flex items-center gap-1.5"><div class="w-2.5 h-2.5 rounded-full bg-slate-100 shadow-[0_0_3px_#fff]"></div> 1 Bullet</div>
+                        <div class="flex items-center gap-1.5"><div class="w-2.5 h-2.5 rounded-full bg-amber-400 shadow-[0_0_3px_#fbbf24]"></div> 5 Bullets</div>
+                        <div class="flex items-center gap-1.5"><div class="w-2.5 h-2.5 rounded-full bg-purple-600 shadow-[0_0_3px_#9333ea]"></div> Bomb (DMG+)</div>
+                        <div class="flex items-center gap-1.5"><div class="w-2.5 h-2.5 rounded-full bg-sky-400 shadow-[0_0_3px_#38bdf8]"></div> Freeze (Skip)</div>
+                        <div class="flex items-center gap-1.5 col-span-2 justify-center mt-1"><div class="w-2.5 h-2.5 rounded-full bg-red-500 shadow-[0_0_3px_#ef4444]"></div> Heal +20 HP</div>
+                    </div>
+                </div>
+
+                <button onclick="startFromIntro()" class="bg-cyan-500 hover:bg-cyan-400 text-slate-950 px-8 py-3 rounded-xl font-bold text-xs transition-transform transform active:scale-95 shadow-[0_0_15px_rgba(6,182,212,0.5)]">
+                    <i class="fa-solid fa-play mr-1"></i> PLAY NOW
+                </button>
+            </div>
+
+            <!-- Game Over Overlay -->
+            <div id="game-over-overlay" class="hidden absolute inset-0 bg-slate-950/90 z-50 flex flex-col items-center justify-center backdrop-blur-sm">
+                <h2 class="arcade-font text-red-500 text-xl mb-2 text-center drop-shadow-[0_0_10px_rgba(239,68,68,0.8)]">GAME OVER</h2>
+                <p class="text-slate-300 text-[10px] mb-6">Round Reached: <span id="final-round" class="text-cyan-400 font-bold text-sm">1</span></p>
+                <button onclick="restartGame()" class="bg-cyan-500 hover:bg-cyan-400 text-slate-950 px-6 py-2.5 rounded-xl font-bold text-xs transition-transform transform active:scale-95 shadow-[0_0_15px_rgba(6,182,212,0.5)]">
+                    PLAY AGAIN
+                </button>
+            </div>
+
+            <!-- UPPER SECTION: Shooter Arena -->
+            <div class="relative w-full h-[40%] border-b border-slate-800 flex flex-col overflow-hidden pt-2 pb-2">
+                
+                <!-- Desert Background SVG -->
+                <div class="absolute inset-0 z-0 pointer-events-none">
+                    <svg viewBox="0 0 400 300" preserveAspectRatio="none" class="w-full h-full">
+                        <!-- Sky Gradient -->
+                        <defs>
+                            <linearGradient id="skyGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+                                <stop offset="0%" stop-color="#ea580c"/> <!-- Deep Orange -->
+                                <stop offset="50%" stop-color="#fb923c"/> <!-- Orange -->
+                                <stop offset="100%" stop-color="#fde047"/> <!-- Yellow -->
+                            </linearGradient>
+                        </defs>
+                        <rect width="400" height="300" fill="url(#skyGrad)"/>
+                        
+                        <!-- Sun -->
+                        <circle cx="200" cy="120" r="50" fill="#fef08a" opacity="0.5" filter="blur(4px)"/>
+
+                        <!-- Distant Pyramids -->
+                        <!-- Left Pyramid -->
+                        <polygon points="60,240 120,160 190,240" fill="#b45309" opacity="0.6"/>
+                        <polygon points="120,160 160,240 190,240" fill="#92400e" opacity="0.4"/>
+                        <!-- Middle Pyramid -->
+                        <polygon points="140,250 200,170 270,250" fill="#b45309" opacity="0.7"/>
+                        <polygon points="200,170 240,250 270,250" fill="#92400e" opacity="0.5"/>
+                        <!-- Right Small Pyramid -->
+                        <polygon points="280,260 320,200 370,260" fill="#b45309" opacity="0.5"/>
+
+                        <!-- Rolling Sand Dunes -->
+                        <path d="M-20,220 Q100,190 220,240 T420,220 L420,300 L-20,300 Z" fill="#d97706"/>
+                        <path d="M-20,250 Q150,210 260,260 T420,240 L420,300 L-20,300 Z" fill="#f59e0b"/>
+                        <path d="M-50,300 Q100,240 220,280 T450,260 L450,300 Z" fill="#fbbf24"/>
+                    </svg>
+                </div>
+
+                <!-- TOP UI GROUP: Turn Indicator, Stats -->
+                <div class="flex flex-col items-center w-full z-20 space-y-1.5 px-2">
+                    <!-- Turn Indicator -->
+                    <div id="turn-indicator" class="text-center font-bold text-[10px] px-8 py-1 rounded bg-cyan-900 text-cyan-200 border border-cyan-500 shadow-[0_0_10px_rgba(6,182,212,0.4)] transition-colors duration-300 uppercase tracking-widest">
+                        YOUR TURN
+                    </div>
+
+                    <!-- HUD stats -->
+                    <div class="flex justify-center items-center space-x-3 w-full">
+                        <div class="flex items-center space-x-2 bg-slate-900/90 px-2.5 py-1 rounded-lg border border-slate-700/50 text-[10px] shadow-md">
+                            <div class="drop-shadow-[0_1px_1px_rgba(0,0,0,0.8)]">Score: <span id="score-val" class="arcade-font text-yellow-400">0</span></div>
+                            <div class="w-[1px] h-3 bg-slate-700"></div>
+                            <div class="drop-shadow-[0_1px_1px_rgba(0,0,0,0.8)]">Ammo: <span id="ammo-val" class="arcade-font text-cyan-400">3</span></div>
+                        </div>
+                        <div class="text-[9px] bg-rose-900/90 text-rose-300 px-2 py-0.5 rounded-full border border-rose-500/50 shadow-md drop-shadow-[0_1px_1px_rgba(0,0,0,0.8)]">
+                            Round: <span id="round-val" class="font-bold">1</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- HP BARS ROW (Perfectly Level) -->
+                <div class="flex justify-between items-center w-full px-4 mt-3 z-20">
+                    <!-- Hero HP -->
+                    <div class="flex flex-col items-start w-20">
+                        <div class="text-[8px] text-emerald-400 font-bold mb-0.5 drop-shadow-[0_1px_1px_rgba(0,0,0,0.8)]">Hero: <span id="hero-hp-val">100</span></div>
+                        <div class="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden border border-slate-700 shadow-sm">
+                            <div id="hero-hp-bar" class="h-full bg-emerald-500 w-full transition-all duration-300"></div>
+                        </div>
+                    </div>
+                    <!-- Enemy HP -->
+                    <div class="flex flex-col items-end w-20">
+                        <div class="text-[8px] text-rose-400 font-bold mb-0.5 drop-shadow-[0_1px_1px_rgba(0,0,0,0.8)]">Enemy: <span id="enemy-hp-val">300</span></div>
+                        <div class="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden border border-slate-700 shadow-sm">
+                            <div id="enemy-hp-bar" class="h-full bg-rose-500 w-full transition-all duration-300"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- CHARACTERS ROW (Bottom Aligned) -->
+                <div class="absolute inset-x-6 bottom-12 flex items-end justify-between pointer-events-none z-10">
+                    <!-- Character Gunner -->
+                    <div id="player-character" class="relative flex items-center justify-center transition-all duration-150 w-16 h-16 animate-idle pointer-events-auto origin-bottom">
+                        <!-- Custom Inline SVG Arcade Hero -->
+                        <svg viewBox="0 0 100 100" class="w-full h-full drop-shadow-[0_0_10px_rgba(56,189,248,0.6)]">
+                            <!-- Backpack -->
+                            <rect x="15" y="35" width="25" height="40" rx="5" fill="#92400e" stroke="#451a03" stroke-width="2"/>
+                            <rect x="10" y="45" width="10" height="20" rx="3" fill="#b45309" stroke="#451a03" stroke-width="2"/>
+                            <!-- Body/Armor -->
+                            <rect x="30" y="45" width="25" height="25" rx="4" fill="#334155" stroke="#0f172a" stroke-width="2"/>
+                            <rect x="35" y="50" width="15" height="15" rx="2" fill="#475569"/>
+                            <!-- Legs -->
+                            <rect x="35" y="70" width="8" height="15" fill="#78350f" stroke="#451a03" stroke-width="2"/>
+                            <rect x="47" y="70" width="8" height="15" fill="#78350f" stroke="#451a03" stroke-width="2"/>
+                            <!-- Boots -->
+                            <rect x="32" y="80" width="12" height="10" rx="2" fill="#451a03"/>
+                            <rect x="44" y="80" width="12" height="10" rx="2" fill="#451a03"/>
+                            <!-- Head -->
+                            <rect x="32" y="20" width="28" height="26" rx="6" fill="#fcd34d" stroke="#451a03" stroke-width="2"/>
+                            <!-- Hair (Spiky) -->
+                            <path d="M 30 25 L 35 10 L 42 20 L 48 5 L 55 18 L 62 8 L 62 25 Z" fill="#451a03"/>
+                            <!-- Eyes -->
+                            <rect x="45" y="28" width="4" height="6" fill="#0f172a"/>
+                            <rect x="53" y="28" width="4" height="6" fill="#0f172a"/>
+                            <!-- Smile -->
+                            <path d="M 48 38 Q 52 42 56 38" fill="none" stroke="#0f172a" stroke-width="2" stroke-linecap="round"/>
+                            <!-- Blaster Gun -->
+                            <rect x="45" y="52" width="40" height="12" rx="2" fill="#64748b" stroke="#0f172a" stroke-width="2"/>
+                            <rect x="75" y="50" width="15" height="16" rx="1" fill="#cbd5e1" stroke="#0f172a" stroke-width="2"/>
+                            <rect x="85" y="54" width="8" height="8" rx="4" fill="#ef4444"/>
+                            <!-- Arm holding gun -->
+                            <path d="M 40 50 L 55 60" stroke="#fcd34d" stroke-width="6" stroke-linecap="round"/>
+                        </svg>
+                    </div>
+
+                    <!-- Enemy target -->
+                    <div id="enemy-container" class="relative flex flex-row items-end justify-end transition-all duration-150 h-16 pointer-events-auto">
+                        <!-- Robots populated by JS -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- DIVISION FLOOR -->
+            <div class="relative w-full h-4 bg-slate-800 border-y border-slate-700 flex items-center justify-center z-20 shadow-inner">
+                <span class="text-[8px] uppercase tracking-widest text-slate-400 bg-slate-900 px-2 py-0.5 rounded-full border border-slate-700">Ammo Machine</span>
+            </div>
+
+            <!-- LOWER SECTION: Claw Machine Canvas -->
+            <div class="relative flex-1 w-full bg-slate-950 flex flex-col justify-between overflow-hidden">
+                <canvas id="clawCanvas" class="w-full h-full block cursor-pointer"></canvas>
+
+                <!-- Controls -->
+                <div class="absolute bottom-2 left-0 right-0 px-3 flex justify-between items-center pointer-events-none">
+                    <div class="flex space-x-2 pointer-events-auto">
+                        <button id="left-btn" onmousedown="startMove(-1)" onmouseup="stopMove()" ontouchstart="startMove(-1)" ontouchend="stopMove()" class="bg-slate-800 hover:bg-slate-700 text-cyan-400 border border-slate-600 w-10 h-10 rounded-xl flex items-center justify-center text-sm shadow-md active:bg-cyan-500 active:text-slate-950 transition-colors">
+                            <i class="fa-solid fa-arrow-left"></i>
+                        </button>
+                        <button id="right-btn" onmousedown="startMove(1)" onmouseup="stopMove()" ontouchstart="startMove(1)" ontouchend="stopMove()" class="bg-slate-800 hover:bg-slate-700 text-cyan-400 border border-slate-600 w-10 h-10 rounded-xl flex items-center justify-center text-sm shadow-md active:bg-cyan-500 active:text-slate-950 transition-colors">
+                            <i class="fa-solid fa-arrow-right"></i>
+                        </button>
+                    </div>
+
+                    <div class="pointer-events-auto">
+                        <button id="claw-btn" onclick="dropClaw()" class="bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 font-extrabold px-4 py-2.5 rounded-xl text-[10px] shadow-xl transform active:scale-95 transition-all flex items-center space-x-1.5">
+                            <i class="fa-solid fa-hand-holding-medical"></i>
+                            <span>DROP CLAW</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="w-full bg-slate-950 py-2 flex justify-center items-center z-30">
+            <div class="w-32 h-1 bg-slate-700 rounded-full"></div>
+        </div>
+
+    </div>
+
+    <!-- Game Logic Script -->
+    <script>
+        // --- State Management ---
+        let ammo = 3;
+        let ammoQueue = ['normal', 'normal', 'normal'];
+        let score = 0;
+        
+        let heroMaxHP = 100, heroHP = 100;
+        let enemies = [];
+        let currentRound = 1;
+        let isGameOver = false;
+        
+        // Turn Based States
+        let currentTurn = 'PLAYER'; // 'PLAYER', 'ENEMY', or 'SHOOTING'
+        let hasUsedClawThisTurn = false;
+
+        const canvas = document.getElementById('clawCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // Physics
+        const { Engine, Composite, Bodies, Query, Bounds } = Matter;
+        let engine = Engine.create();
+        let world = engine.world;
+        let canvasWidth, canvasHeight;
+        let walls = [];
+        const FLOOR_OFFSET = 65; 
+
+        function resizeCanvas() {
+            const parent = canvas.parentElement;
+            canvasWidth = parent.clientWidth;
+            canvasHeight = parent.clientHeight;
+            canvas.width = canvasWidth;
+            canvas.height = canvasHeight;
+
+            if (walls.length > 0) Composite.remove(world, walls);
+            const wallOptions = { isStatic: true, renderType: 'wall', friction: 0.5 };
+            walls = [
+                Bodies.rectangle(canvasWidth / 2, canvasHeight - FLOOR_OFFSET + 25, canvasWidth, 50, wallOptions),
+                Bodies.rectangle(-25, canvasHeight / 2, 50, canvasHeight * 2, wallOptions),
+                Bodies.rectangle(canvasWidth + 25, canvasHeight / 2, 50, canvasHeight * 2, wallOptions)
+            ];
+            Composite.add(world, walls);
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        let claw = {
+            x: 150, y: 20, width: 40, height: 14,
+            speed: 3, state: 'IDLE', stringLength: 30, dx: 0,
+            openness: 0, holdingItems: []
+        };
+
+        function createBall(type, fallFromTop = false) {
+            let radius, color;
+            switch(type) {
+                case 'normal': radius = 9; color = '#f8fafc'; break;
+                case 'gold': radius = 14; color = '#fbbf24'; break;
+                case 'heart': radius = 13; color = '#ef4444'; break;
+                case 'bomb': radius = 16; color = '#7e22ce'; break;
+                case 'ice': radius = 12; color = '#38bdf8'; break;
+            }
+            
+            const startX = 30 + Math.random() * (canvasWidth - 60);
+            const startY = fallFromTop ? -50 - Math.random() * 100 : -Math.random() * 2000;
+            
+            const options = { restitution: 0.3, friction: 0.05, density: 0.04, renderType: type, itemRadius: radius, itemColor: color };
+            let body = type === 'ice' ? Bodies.rectangle(startX, startY, radius * 2, radius * 2, options) : Bodies.circle(startX, startY, radius, options);
+            Composite.add(world, body);
+            return body;
+        }
+
+        function spawnItems() {
+            const bodiesToRemove = Composite.allBodies(world).filter(b => b.renderType !== 'wall');
+            Composite.remove(world, bodiesToRemove);
+            for (let i = 0; i < 150; i++) createBall('normal'); 
+            for (let i = 0; i < 8; i++) createBall('gold');
+            for (let i = 0; i < 5; i++) createBall('heart');
+            for (let i = 0; i < 4; i++) createBall('bomb');
+            for (let i = 0; i < 5; i++) createBall('ice');
+        }
+
+        let lastRefillTime = 0;
+        function checkAndRefillBalls() {
+            if (!canvasHeight) return;
+            const now = Date.now();
+            if (now - lastRefillTime < 800) return;
+            const currentThresholdY = (canvasHeight - FLOOR_OFFSET) * 0.55;
+            const activeItems = Composite.allBodies(world).filter(b => b.renderType && b.renderType !== 'wall');
+            
+            // FIX: Abaikan bola yang mungkin terpental dan tersangkut jauh di atas layar (y < -50)
+            const validItems = activeItems.filter(b => b.position.y > -50);
+            
+            let highestY = canvasHeight;
+            if (validItems.length > 0) highestY = Math.min(...validItems.map(b => b.position.y));
+
+            // TRIGGER REFILL: Jika tumpukan turun di bawah garis ATAU bola kurang dari 15 buah
+            if (highestY > currentThresholdY || validItems.length < 15) {
+                for (let i = 0; i < 40; i++) {
+                    let r = Math.random(), type = 'normal';
+                    if (r > 0.95) type = 'gold'; else if (r > 0.90) type = 'heart';
+                    else if (r > 0.86) type = 'bomb'; else if (r > 0.82) type = 'ice';
+                    createBall(type, true);
+                }
+                lastRefillTime = now;
+            }
+        }
+        setTimeout(spawnItems, 100);
+
+        // --- UI Updaters ---
+        function updateRPG_HUD() {
+            document.getElementById('ammo-val').innerText = ammo;
+            document.getElementById('score-val').innerText = score;
+            document.getElementById('hero-hp-val').innerText = Math.max(0, Math.floor(heroHP));
+            document.getElementById('hero-hp-bar').style.width = `${(heroHP/heroMaxHP)*100}%`;
+            
+            if (enemies.length > 0) {
+                document.getElementById('enemy-hp-val').innerText = Math.max(0, Math.floor(enemies[0].hp));
+                document.getElementById('enemy-hp-bar').style.width = `${(enemies[0].hp/enemies[0].maxHp)*100}%`;
+            } else {
+                document.getElementById('enemy-hp-val').innerText = '0';
+                document.getElementById('enemy-hp-bar').style.width = '0%';
+            }
+            
+            document.getElementById('round-val').innerText = currentRound;
+            
+            // Buttons state
+            const clawBtn = document.getElementById('claw-btn');
+            const leftBtn = document.getElementById('left-btn');
+            const rightBtn = document.getElementById('right-btn');
+            
+            if (currentTurn === 'ENEMY' || currentTurn === 'SHOOTING') {
+                clawBtn.classList.add('disabled-btn');
+                leftBtn.classList.add('disabled-btn');
+                rightBtn.classList.add('disabled-btn');
+            } else {
+                leftBtn.classList.remove('disabled-btn');
+                rightBtn.classList.remove('disabled-btn');
+                
+                if (hasUsedClawThisTurn) {
+                    clawBtn.classList.add('disabled-btn');
+                } else {
+                    clawBtn.classList.remove('disabled-btn');
+                }
+            }
+        }
+
+        function updateTurnIndicator() {
+            const indicator = document.getElementById('turn-indicator');
+            if (currentTurn === 'PLAYER') {
+                indicator.className = "text-center font-bold text-[10px] px-8 py-1 rounded bg-cyan-900 text-cyan-200 border border-cyan-500 shadow-[0_0_10px_rgba(6,182,212,0.4)] transition-colors duration-300 uppercase tracking-widest";
+                indicator.innerText = "YOUR TURN";
+            } else if (currentTurn === 'SHOOTING') {
+                indicator.className = "text-center font-bold text-[10px] px-8 py-1 rounded bg-amber-900 text-amber-200 border border-amber-500 shadow-[0_0_10px_rgba(245,158,11,0.4)] transition-colors duration-300 uppercase tracking-widest";
+                indicator.innerText = "AUTO SHOOT!";
+            } else {
+                indicator.className = "text-center font-bold text-[10px] px-8 py-1 rounded bg-rose-900 text-rose-200 border border-rose-500 shadow-[0_0_10px_rgba(244,63,94,0.4)] transition-colors duration-300 uppercase tracking-widest";
+                indicator.innerText = "ENEMY TURN";
+            }
+            updateRPG_HUD();
+        }
+
+        function showNotification(text, type = "info") {
+            const box = document.getElementById('notification-text');
+            box.innerText = text;
+            const notifContainer = document.getElementById('notification-box');
+            if (type === "success") notifContainer.className = "bg-emerald-950/90 border-b border-emerald-500/50 text-emerald-200 px-3 py-1 text-[10px] flex items-center justify-between z-20 transition-all";
+            else if (type === "error") notifContainer.className = "bg-rose-950/90 border-b border-rose-500/50 text-rose-200 px-3 py-1 text-[10px] flex items-center justify-between z-20 transition-all";
+            else notifContainer.className = "bg-cyan-950/90 border-b border-cyan-500/30 text-cyan-200 px-3 py-1 text-[10px] flex items-center justify-between z-20 transition-all";
+        }
+
+        function dismissNotification() {
+            document.getElementById('notification-box').style.display = 'none';
+        }
+
+        function startFromIntro() {
+            document.getElementById('intro-screen').classList.add('hidden');
+            showNotification("Game Started! Grab ammo from the machine.", "info");
+        }
+
+        // --- Enemy & Turn Based Logic ---
+        function spawnEnemies(round) {
+            const count = Math.min(4, round);
+            const currentMaxHP = Math.floor(300 * Math.pow(1.2, round - 1));
+            enemies = [];
+            const container = document.getElementById('enemy-container');
+            container.innerHTML = '';
+            
+            for(let i=0; i<count; i++) {
+                enemies.push({ id: i, maxHp: currentMaxHP, hp: currentMaxHP, frozen: false });
+                
+                const robotDiv = document.createElement('div');
+                robotDiv.id = `robot-${i}`;
+                robotDiv.className = `relative flex flex-col items-center justify-end transition-all duration-300 transform ${i > 0 ? '-ml-6' : ''}`;
+                robotDiv.style.zIndex = 10 - i;
+                
+                robotDiv.innerHTML = `
+                    <div id="ice-effect-${i}" class="hidden absolute text-2xl -top-4 -right-2 z-20 filter drop-shadow-md">❄️</div>
+                    <svg viewBox="0 0 100 100" class="w-16 h-16 drop-shadow-[0_0_10px_rgba(239,68,68,0.8)] scale-x-[-1]">
+                        <rect x="70" y="45" width="15" height="25" rx="3" fill="#cbd5e1" stroke="#0f172a" stroke-width="2"/>
+                        <rect x="35" y="40" width="40" height="35" rx="8" fill="#475569" stroke="#0f172a" stroke-width="3"/>
+                        <rect x="40" y="15" width="30" height="25" rx="6" fill="#94a3b8" stroke="#0f172a" stroke-width="3"/>
+                        <rect x="45" y="22" width="20" height="10" rx="2" fill="#0f172a"/>
+                        <circle cx="50" cy="27" r="3" fill="#ef4444" class="animate-pulse"/>
+                        <circle cx="60" cy="27" r="3" fill="#ef4444" class="animate-pulse"/>
+                        <rect x="30" y="75" width="50" height="15" rx="7" fill="#1e293b" stroke="#0f172a" stroke-width="3"/>
+                        <circle cx="40" cy="82.5" r="4" fill="#64748b"/>
+                        <circle cx="55" cy="82.5" r="4" fill="#64748b"/>
+                        <circle cx="70" cy="82.5" r="4" fill="#64748b"/>
+                        <line x1="55" y1="15" x2="55" y2="5" stroke="#0f172a" stroke-width="3" stroke-linecap="round"/>
+                        <circle cx="55" cy="3" r="4" fill="#ef4444"/>
+                        <rect x="15" y="55" width="25" height="10" rx="3" fill="#64748b" stroke="#0f172a" stroke-width="2"/>
+                        <circle cx="40" cy="60" r="6" fill="#334155" stroke="#0f172a" stroke-width="2"/>
+                        <rect x="10" y="56.5" width="8" height="7" rx="1" fill="#ef4444"/>
+                    </svg>
+                `;
+                container.appendChild(robotDiv);
+            }
+        }
+
+        async function switchTurnToEnemy() {
+            if (isGameOver) return;
+            currentTurn = 'ENEMY';
+            updateTurnIndicator();
+
+            await new Promise(resolve => setTimeout(resolve, 1000));
+
+            for (let i = 0; i < enemies.length; i++) {
+                if (isGameOver) break;
+                
+                const target = enemies[i];
+                if (target.frozen) {
+                    target.frozen = false;
+                    const eff = document.getElementById(`ice-effect-${target.id}`);
+                    if(eff) eff.classList.add('hidden');
+                    const rb = document.getElementById(`robot-${target.id}`);
+                    if(rb) rb.classList.remove('grayscale');
+                    showNotification(`Robot ${i+1} Frozen! Turn skipped ❄️`, "info");
+                    
+                    await new Promise(resolve => setTimeout(resolve, 800));
+                } else {
+                    const rb = document.getElementById(`robot-${target.id}`);
+                    if (rb) {
+                        rb.classList.remove('animate-enemy-recoil');
+                        void rb.offsetWidth; // trigger reflow
+                        rb.classList.add('animate-enemy-recoil');
+                    }
+                    
+                    let damage = Math.floor(5 * Math.pow(1.2, currentRound - 1));
+                    takeHeroDamage(damage);
+                    
+                    // Jeda antara tembakan robot satu dengan robot berikutnya
+                    await new Promise(resolve => setTimeout(resolve, 800));
+                }
+            }
+
+            if (!isGameOver) {
+                currentTurn = 'PLAYER';
+                hasUsedClawThisTurn = false;
+                updateTurnIndicator();
+                showNotification("Your Turn! Grab ammo from the machine.", "info");
+            }
+        }
+
+        function takeHeroDamage(amount) {
+            heroHP -= amount;
+            updateRPG_HUD();
+            const char = document.getElementById('player-character');
+            char.classList.add('brightness-50', 'translate-x-2');
+            setTimeout(() => char.classList.remove('brightness-50', 'translate-x-2'), 150);
+            showNotification(`Enemy attacks! (-${amount} HP) ⚠️`, "error");
+
+            if (heroHP <= 0 && !isGameOver) {
+                isGameOver = true;
+                document.getElementById('final-round').innerText = currentRound;
+                document.getElementById('game-over-overlay').classList.remove('hidden');
+            }
+        }
+
+        async function autoShootSequence() {
+            currentTurn = 'SHOOTING';
+            updateTurnIndicator();
+
+            while ((ammo > 0 || enemies.length === 0) && !isGameOver) {
+                if (enemies.length === 0) {
+                    score += 100;
+                    showNotification("All Enemies Defeated! Next round... 🎯", "success");
+                    
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                    
+                    currentRound++;
+                    score += 500;
+                    
+                    // HP Hero meningkat 35% dan terisi penuh setiap menang
+                    heroMaxHP = Math.floor(heroMaxHP * 1.35);
+                    heroHP = heroMaxHP;
+                    showNotification(`MAX HP UP! (+35%) ❤️`, "success");
+                    
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+
+                    spawnEnemies(currentRound);
+                    updateRPG_HUD();
+                    showNotification(`ROUND ${currentRound} STARTED!`, "info");
+                    
+                    await new Promise(resolve => setTimeout(resolve, 500));
+                    continue; 
+                }
+
+                if (ammo > 0) {
+                    await new Promise(resolve => setTimeout(resolve, 400)); 
+                    
+                    let bulletType = ammoQueue.shift() || 'normal';
+                    ammo = ammoQueue.length;
+                    
+                    let damage = 25;
+                    let target = enemies[0]; // Target the front-most robot
+
+                    if (bulletType === 'bomb') {
+                        damage = 33; 
+                        showNotification("💣 Bomb Hit! (+30% DMG)", "success");
+                        
+                        // Animasi Ledakan Bom
+                        const robotDiv = document.getElementById(`robot-${target.id}`);
+                        if (robotDiv) {
+                            const explodeWrapper = document.createElement('div');
+                            explodeWrapper.className = 'absolute inset-0 flex flex-col items-center justify-center z-50 pointer-events-none -mt-8';
+                            explodeWrapper.innerHTML = `
+                                <div class="animate-explosion flex flex-col items-center">
+                                    <div class="text-5xl filter drop-shadow-[0_0_15px_#ef4444]">💥</div>
+                                    <div class="arcade-font text-[8px] text-yellow-400 font-bold drop-shadow-[0_0_5px_#ef4444] mt-1 tracking-widest">BOMB!</div>
+                                </div>
+                            `;
+                            robotDiv.appendChild(explodeWrapper);
+                            setTimeout(() => { if (explodeWrapper) explodeWrapper.remove(); }, 500);
+                        }
+                    } else if (bulletType === 'ice') {
+                        target.frozen = true;
+                        const eff = document.getElementById(`ice-effect-${target.id}`);
+                        if(eff) eff.classList.remove('hidden');
+                        const rb = document.getElementById(`robot-${target.id}`);
+                        if(rb) rb.classList.add('grayscale');
+                        showNotification("❄️ Enemy Frozen!", "info");
+                    }
+
+                    target.hp -= damage;
+                    updateRPG_HUD();
+
+                    // Animasi Recoil Player
+                    const char = document.getElementById('player-character');
+                    char.classList.remove('animate-idle', 'animate-recoil');
+                    void char.offsetWidth; 
+                    char.classList.add('animate-recoil');
+                    setTimeout(() => {
+                        char.classList.remove('animate-recoil');
+                        char.classList.add('animate-idle');
+                    }, 350);
+                    
+                    // Animasi Kena Hit Enemy
+                    const robotDiv = document.getElementById(`robot-${target.id}`);
+                    if (robotDiv) {
+                        robotDiv.classList.add('brightness-200', 'scale-90', 'translate-x-1');
+                        setTimeout(() => robotDiv.classList.remove('brightness-200', 'scale-90', 'translate-x-1'), 150);
+                    }
+
+                    if (target.hp <= 0) {
+                        if (robotDiv) robotDiv.classList.add('opacity-0', 'scale-50');
+                        enemies.shift(); // Remove dead robot from array
+                        setTimeout(() => { if (robotDiv) robotDiv.remove(); }, 500);
+                    }
+                }
+            }
+
+            if (!isGameOver) {
+                showNotification("Out of ammo! Enemy Turn.", "error");
+                switchTurnToEnemy();
+            }
+        }
+
+        function restartGame() {
+            isGameOver = false;
+            heroHP = heroMaxHP = 100;
+            currentRound = 1; score = 0; ammo = 3;
+            ammoQueue = ['normal', 'normal', 'normal'];
+            currentTurn = 'PLAYER';
+            hasUsedClawThisTurn = false;
+            
+            spawnEnemies(currentRound);
+            
+            document.getElementById('game-over-overlay').classList.add('hidden');
+            updateTurnIndicator();
+            showNotification("Game Restarted! Your Turn.", "info");
+        }
+
+        // --- Claw Controls ---
+        function startMove(dir) { if (currentTurn === 'PLAYER') claw.dx = dir * claw.speed; }
+        function stopMove() { claw.dx = 0; }
+
+        function dropClaw() {
+            if (currentTurn !== 'PLAYER' || hasUsedClawThisTurn) return;
+            if (claw.state === 'IDLE') {
+                hasUsedClawThisTurn = true;
+                updateRPG_HUD();
+                claw.state = 'DOWN';
+            }
+        }
+
+        // --- Engine Loop ---
+        function updateGame() {
+            Engine.update(engine, 1000 / 60);
+            checkAndRefillBalls();
+
+            if (claw.state === 'IDLE') {
+                claw.x += claw.dx;
+                if (claw.x < 35) claw.x = 35;
+                if (claw.x > canvasWidth - 35) claw.x = canvasWidth - 35;
+            } else if (claw.state === 'DOWN') {
+                claw.stringLength += 4; // Turun lebih cepat dan mulus
+                claw.openness = Math.min(1, claw.openness + 0.08);
+                
+                const catchRegion = Bounds.create([{ x: claw.x - 50, y: claw.y + claw.stringLength + 10 }, { x: claw.x + 50, y: claw.y + claw.stringLength + 70 }]);
+                const potentialCatches = Query.region(Composite.allBodies(world), catchRegion).filter(b => b.renderType && b.renderType !== 'wall');
+                
+                // Jika menyentuh bola atau mencapai dasar
+                if (potentialCatches.length > 0 || claw.stringLength >= canvasHeight - FLOOR_OFFSET - 45) {
+                    claw.state = 'UP'; // Langsung naik
+                    let caughtCount = 0;
+                    
+                    // Ambil bola
+                    potentialCatches.sort((a, b) => Math.abs(a.position.x - claw.x) - Math.abs(b.position.x - claw.x));
+                    potentialCatches.forEach(body => {
+                        if (caughtCount < 8 && Math.random() > 0.05) { // Maks 8 bola
+                            Composite.remove(world, body); // Hapus dari dunia fisika agar tidak glitch
+                            claw.holdingItems.push({ type: body.renderType, radius: body.itemRadius, color: body.itemColor, x: body.position.x, y: body.position.y, angle: body.angle });
+                            caughtCount++;
+                        }
+                    });
+                }
+            } else if (claw.state === 'UP') {
+                claw.stringLength -= 4; // Naik cepat dan mulus
+                claw.openness = Math.max(0, claw.openness - 0.08); // Capit menutup
+                
+                if (claw.holdingItems.length > 0) {
+                    claw.holdingItems.forEach((item, i) => {
+                        // Kunci bola di dalam capit saat naik
+                        const targetX = claw.x + ((i % 3) - 1) * 8; 
+                        const targetY = claw.y + claw.stringLength + 28 + Math.floor(i / 3) * 10;
+                        item.x = targetX; 
+                        item.y = targetY;
+                    });
+                }
+
+                if (claw.stringLength <= 30) {
+                    if (claw.holdingItems.length > 0) {
+                        let gainedAmmo = 0, gainedScore = 0, msgs = [];
+                        claw.holdingItems.forEach(item => {
+                            if (item.type === 'normal') { ammoQueue.push('normal'); gainedAmmo++; gainedScore += 10; }
+                            if (item.type === 'gold') { for(let i=0;i<5;i++) ammoQueue.push('normal'); gainedAmmo += 5; gainedScore += 50; }
+                            if (item.type === 'heart') { heroHP = Math.min(heroMaxHP, heroHP + 20); gainedScore += 100; msgs.push("❤️ +20 HP"); }
+                            if (item.type === 'bomb') { ammoQueue.push('bomb'); gainedAmmo++; gainedScore += 100; }
+                            if (item.type === 'ice') { ammoQueue.push('ice'); gainedAmmo++; }
+                        });
+                        ammo = ammoQueue.length;
+                        score += gainedScore;
+                        if (msgs.length > 0) showNotification(msgs.join(" | "), "success");
+                        else if (gainedAmmo > 0) showNotification(`Caught +${gainedAmmo} Ammo!`, "success");
+
+                        claw.holdingItems = [];
+                    }
+                    claw.state = 'IDLE';
+                    updateRPG_HUD();
+                    
+                    if ((ammo > 0 || enemies.length === 0) && currentTurn === 'PLAYER') {
+                        autoShootSequence();
+                    } else if (currentTurn === 'PLAYER') {
+                        showNotification("No ammo caught! Enemy Turn.", "error");
+                        switchTurnToEnemy();
+                    }
+                }
+            }
+            drawGame();
+            requestAnimationFrame(updateGame);
+        }
+
+        // --- Render ---
+        function drawGame() {
+            ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+            
+            // Render helper functions dideklarasikan di awal agar bisa dipanggil lebih awal
+            const renderItem = (item, isPhysics = false) => {
+                ctx.save();
+                const pX = isPhysics ? item.position.x : item.x, pY = isPhysics ? item.position.y : item.y;
+                const rot = isPhysics ? item.angle : (item.angle || 0), type = isPhysics ? item.renderType : item.type;
+                const r = isPhysics ? item.itemRadius : item.radius, col = isPhysics ? item.itemColor : item.color;
+                
+                ctx.translate(pX, pY); ctx.rotate(rot);
+                if (type === 'ice') {
+                    ctx.fillStyle = col; ctx.lineWidth = 2; ctx.strokeStyle = '#000000';
+                    ctx.beginPath(); ctx.roundRect(-r, -r, r*2, r*2, 4); ctx.fill(); ctx.stroke();
+                    ctx.fillStyle = '#ffffff'; ctx.font = `${r * 1.2}px Inter`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('❄️', 0, 1);
+                } else {
+                    ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.fillStyle = col;
+                    if (type === 'normal') { ctx.lineWidth = 1.2; ctx.strokeStyle = '#475569'; ctx.stroke(); ctx.fill(); } 
+                    else { ctx.lineWidth = 2; ctx.strokeStyle = '#000000'; ctx.stroke(); ctx.fill(); }
+                    
+                    if (type === 'normal' || type === 'gold') {
+                        ctx.beginPath(); ctx.arc(-r*0.3, -r*0.3, r*0.3, 0, Math.PI * 2); ctx.fillStyle = 'rgba(255,255,255,0.7)'; ctx.fill();
+                    } else if (type === 'heart') {
+                        ctx.fillStyle = '#ffffff'; ctx.font = `${r * 1.2}px Inter`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.rotate(-rot); ctx.fillText('❤️', 0, 1);
+                    } else if (type === 'bomb') {
+                        ctx.rotate(-rot); ctx.fillStyle = '#000000'; ctx.fillRect(-4, -r - 4, 8, 6);
+                        ctx.strokeStyle = '#eab308'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(0, -r - 4); ctx.quadraticCurveTo(8, -r - 10, 10, -r - 4); ctx.stroke();
+                    }
+                }
+                ctx.restore();
+            };
+
+            // Background Grid
+            ctx.strokeStyle = 'rgba(56, 189, 248, 0.08)'; ctx.lineWidth = 1;
+            for (let i = 0; i < canvasWidth; i += 24) { ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, canvasHeight); ctx.stroke(); }
+
+            // Dashed Refill Threshold Line (Diperjelas menjadi putih solid)
+            ctx.save(); ctx.setLineDash([8, 8]); ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)'; ctx.lineWidth = 2;
+            const thresholdY = (canvasHeight - FLOOR_OFFSET) * 0.55;
+            ctx.beginPath(); ctx.moveTo(0, thresholdY); ctx.lineTo(canvasWidth, thresholdY); ctx.stroke(); ctx.restore();
+
+            // Red Floor Boundary
+            ctx.strokeStyle = 'rgba(239, 68, 68, 0.6)'; ctx.lineWidth = 3;
+            ctx.beginPath(); ctx.moveTo(0, canvasHeight - FLOOR_OFFSET); ctx.lineTo(canvasWidth, canvasHeight - FLOOR_OFFSET); ctx.stroke();
+
+            // Bin Box
+            ctx.fillStyle = 'rgba(30, 41, 59, 0.8)'; ctx.fillRect(canvasWidth - 55, canvasHeight - FLOOR_OFFSET - 38, 45, 38);
+            ctx.strokeStyle = '#38bdf8'; ctx.lineWidth = 1.5; ctx.strokeRect(canvasWidth - 55, canvasHeight - FLOOR_OFFSET - 38, 45, 38);
+            ctx.fillStyle = '#94a3b8'; ctx.font = '9px Inter'; ctx.textAlign = 'center'; ctx.fillText('BIN', canvasWidth - 32, canvasHeight - FLOOR_OFFSET - 17);
+
+            // Rail & String
+            ctx.fillStyle = '#334155'; ctx.fillRect(0, 8, canvasWidth, 10);
+            ctx.strokeStyle = '#38bdf8'; ctx.lineWidth = 4;
+            ctx.beginPath(); ctx.moveTo(claw.x, 18); ctx.lineTo(claw.x, claw.y + claw.stringLength); ctx.stroke();
+
+            // MENGGAMBAR ITEM FISIK DAN YANG TERTANGKAP LEBIH DULU
+            // Agar saat digambar capitnya, item-item tersebut terlihat berada DI DALAM pelukan tangan capit
+            Composite.allBodies(world).forEach(body => { if (body.renderType && body.renderType !== 'wall') renderItem(body, true); });
+            claw.holdingItems.forEach(item => renderItem(item, false));
+
+            // Claw Mechanical Rendering (Medium Size) - Digambar di atas item agar terlihat mencengkeram
+            const headY = claw.y + claw.stringLength;
+            ctx.fillStyle = '#1e293b'; ctx.fillRect(claw.x - 8, headY - 10, 16, 10);
+            ctx.strokeStyle = '#0f172a'; ctx.lineWidth = 2; ctx.strokeRect(claw.x - 8, headY - 10, 16, 10);
+            ctx.fillStyle = '#b45309'; ctx.beginPath(); ctx.moveTo(claw.x - 20, headY); ctx.lineTo(claw.x + 20, headY); ctx.lineTo(claw.x + 14, headY + 16); ctx.lineTo(claw.x - 14, headY + 16); ctx.closePath(); ctx.fill(); ctx.stroke();
+            ctx.fillStyle = '#fcd34d'; ctx.beginPath(); ctx.arc(claw.x - 10, headY + 8, 3, 0, Math.PI*2); ctx.fill(); ctx.beginPath(); ctx.arc(claw.x + 10, headY + 8, 3, 0, Math.PI*2); ctx.fill();
+
+            const curAngle = (Math.PI / 12) + ((Math.PI / 3.5) - (Math.PI / 12)) * claw.openness;
+            const drawArm = (isLeft) => {
+                const s = isLeft ? -1 : 1, pX = claw.x + (14 * s), pY = headY + 14;
+                const jX = pX + Math.sin(curAngle) * 30 * s, jY = pY + Math.cos(curAngle) * 30;
+                const lA = curAngle - 1.25, eX = jX + Math.sin(lA) * 30 * s, eY = jY + Math.cos(lA) * 30;
+                
+                ctx.strokeStyle = '#94a3b8'; ctx.lineWidth = 10; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+                ctx.beginPath(); ctx.moveTo(pX, pY); ctx.lineTo(jX, jY); ctx.stroke();
+                ctx.strokeStyle = '#b45309'; ctx.lineWidth = 8; ctx.beginPath(); ctx.moveTo(jX, jY); ctx.lineTo(eX, eY); ctx.stroke();
+                
+                ctx.strokeStyle = '#cbd5e1'; ctx.lineWidth = 1.5;
+                for(let i=0.5; i<=0.85; i+=0.12) {
+                    const bx = jX + (eX - jX) * i, by = jY + (eY - jY) * i, pX2 = Math.cos(lA) * 5 * s, pY2 = -Math.sin(lA) * 5 * s;
+                    ctx.beginPath(); ctx.moveTo(bx - pX2, by - pY2); ctx.lineTo(bx + pX2, by + pY2); ctx.stroke();
+                }
+                ctx.fillStyle = '#fcd34d'; ctx.lineWidth = 1.5; ctx.strokeStyle = '#1e293b';
+                ctx.beginPath(); ctx.arc(pX, pY, 6, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+                ctx.beginPath(); ctx.arc(jX, jY, 6, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+            };
+            drawArm(true); drawArm(false);
+            
+            // (Blok renderItem dan pemanggilan draw physics/holding dipindah ke atas capit)
+        }
+
+        spawnEnemies(currentRound);
+        updateTurnIndicator(); // Initialize UI
+        requestAnimationFrame(updateGame);
+    </script>
+</body>
+</html>
