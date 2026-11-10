@@ -843,5 +843,28 @@
         updateTurnIndicator(); // Initialize UI
         requestAnimationFrame(updateGame);
     </script>
+    <!-- Import modul pricing & NEP-245 -->
+<script type="module">
+    import { NEP245_ITEMS, merchants, calculateItemPrice, sellItemToMerchant, runFastForwardSimulation } from './merchant_pricing.js';
+  
+    // State Inventory Pemain (Multi-Token NEP-245)
+    window.playerNEP245Inventory = { "0": 0, "1": 0, "2": 0, "3": 0 };
+  
+    // Fungsi saat musuh mati (Enemy Drop Event)
+    window.triggerEnemyLootDrop = function() {
+        const rand = Math.random();
+        let droppedId = "0"; // Default Scrap Metal
+  
+        if (rand < 0.05) droppedId = "3";      // Core Gem (5%)
+        else if (rand < 0.20) droppedId = "2"; // Energy Cell (15%)
+        else if (rand < 0.50) droppedId = "1"; // Circuit Board (30%)
+  
+        window.playerNEP245Inventory[droppedId]++;
+        const item = NEP245_ITEMS[droppedId];
+        
+        console.log(`[NEP-245 DROP] Robot dropped: ${item.icon} ${item.name}`);
+        // Panggil pembaruan UI Inventory di sini
+    };
+  </script>
 </body>
 </html>
